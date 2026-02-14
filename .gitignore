@@ -1,0 +1,12 @@
+node_modules/
+.env
+*.log
+*.log.bak.*
+logs/
+coverage/
+.DS_Store
+data/docs_index.db
+sync-checkpoint.json
+monitor-status.json
+deploy-status.json
+checkpoints/

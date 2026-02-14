@@ -1,0 +1,321 @@
+# SPEC.yaml - docs-rag Skill v2.0
+# Specification for batch processing and checkpoint/resume capabilities
+
+skill:
+  name: openclaw-docs-rag
+  version: "2.0.0"
+  description: OpenClaw documentation RAG with batch processing and checkpoint/resume support
+
+interfaces:
+  # Interface 1: Batch Sync
+  - name: BatchSync
+    type: class
+    description: Handles document synchronization in batches with progress tracking
+    
+    methods:
+      - name: constructor
+        params:
+          - name: options
+            type: object
+            required: true
+            properties:
+              batchSize:
+                type: integer
+                default: 50
+                description: Number of chunks per batch
+              checkpointPath:
+                type: string
+                default: "./sync-checkpoint.json"
+                description: Path to checkpoint file
+              apiKey:
+                type: string
+                required: true
+                description: OpenAI API key for embeddings
+        preconditions:
+          - options.batchSize > 0
+          - options.batchSize <= 500
+        postconditions:
+          - BatchSync instance created with valid configuration
+      
+      - name: sync
+        params:
+          - name: options
+            type: object
+            properties:
+              resume:
+                type: boolean
+                default: true
+                description: Whether to resume from last checkpoint
+              force:
+                type: boolean
+                default: false
+                description: Force full re-sync, ignore checkpoint
+        returns:
+          type: object
+          properties:
+            success:
+              type: boolean
+            docsProcessed:
+              type: integer
+            chunksProcessed:
+              type: integer
+            batchesCompleted:
+              type: integer
+            errors:
+              type: array
+        preconditions:
+          - Database connection available
+          - API key valid
+        postconditions:
+          - All chunks processed or checkpoint saved on interrupt
+          - Database contains processed chunks
+      
+      - name: getProgress
+        returns:
+          type: object
+          properties:
+            totalChunks:
+              type: integer
+            processedChunks:
+              type: integer
+            currentBatch:
+              type: integer
+            totalBatches:
+              type: integer
+            percentage:
+              type: number
+
+  # Interface 2: Checkpoint Manager
+  - name: CheckpointManager
+    type: class
+    description: Manages checkpoint state for resume capability
+    
+    methods:
+      - name: constructor
+        params:
+          - name: checkpointPath
+            type: string
+            required: true
+        postconditions:
+          - Checkpoint file initialized if not exists
+      
+      - name: save
+        params:
+          - name: state
+            type: object
+            required: true
+            properties:
+              totalChunks:
+                type: integer
+              processedChunkIds:
+                type: array
+                items:
+                  type: string
+              failedChunkIds:
+                type: array
+                items:
+                  type: string
+              currentBatch:
+                type: integer
+              lastUpdated:
+                type: string
+                format: ISO8601
+        postconditions:
+          - State persisted to checkpoint file atomically
+      
+      - name: load
+        returns:
+          type: object
+          nullable: true
+          properties:
+            totalChunks:
+              type: integer
+            processedChunkIds:
+              type: array
+            failedChunkIds:
+              type: array
+            currentBatch:
+              type: integer
+            lastUpdated:
+              type: string
+        postconditions:
+          - Returns null if no checkpoint exists
+          - Returns parsed state if checkpoint exists
+      
+      - name: clear
+        postconditions:
+          - Checkpoint file removed
+      
+      - name: isResumable
+        returns:
+          type: boolean
+        postconditions:
+          - Returns true if valid checkpoint exists and is not stale (>24h)
+
+  # Interface 3: Chunk Deduplication
+  - name: ChunkDeduplicator
+    type: utility
+    description: Ensures idempotent processing via content hashing
+    
+    methods:
+      - name: computeHash
+        params:
+          - name: chunk
+            type: object
+            required: true
+            properties:
+              text:
+                type: string
+              source:
+                type: string
+              heading:
+                type: string
+        returns:
+          type: string
+          description: MD5 hash of normalized content
+      
+      - name: isProcessed
+        params:
+          - name: chunkHash
+            type: string
+            required: true
+          - name: processedHashes
+            type: array
+            required: true
+        returns:
+          type: boolean
+
+contracts:
+  - name: Batch Size Limits
+    description: Batch size must be within safe limits
+    invariant: batchSize >= 1 AND batchSize <= 500
+    
+  - name: Checkpoint Atomicity
+    description: Checkpoint writes must be atomic to prevent corruption
+    invariant: checkpoint file is valid JSON or does not exist
+    
+  - name: Resume Consistency
+    description: Resumed sync must not duplicate successfully processed chunks
+    invariant: processedChunkIds ∩ newChunks = ∅
+    
+  - name: Idempotency
+    description: Same content processed multiple times produces same result
+    invariant: hash(chunk1) == hash(chunk2) => process(chunk1) == process(chunk2)
+
+scenarios:
+  # Scenario 1: Fresh Sync
+  - name: Fresh Full Sync
+    given:
+      - No checkpoint exists
+      - 3471 chunks to process
+      - Batch size is 50
+    when:
+      - batchSync.sync({ resume: false })
+    then:
+      - 70 batches are created (3471 / 50 = 69.42, rounded up)
+      - All chunks processed
+      - Checkpoint saved after each batch
+      - Database contains 3471 chunks
+      - Returns { success: true, chunksProcessed: 3471, batchesCompleted: 70 }
+
+  # Scenario 2: Resume After Interrupt
+  - name: Resume Interrupted Sync
+    given:
+      - Checkpoint exists with 2500 processed chunks
+      - 971 chunks remaining
+      - Last completed batch was 50
+    when:
+      - batchSync.sync({ resume: true })
+    then:
+      - Skips first 2500 chunks
+      - Starts from batch 51
+      - Processes remaining 971 chunks in ~20 batches
+      - Returns { success: true, chunksProcessed: 971, batchesCompleted: 20 }
+
+  # Scenario 3: Force Full Re-sync
+  - name: Force Full Re-sync
+    given:
+      - Checkpoint exists with 3000 processed chunks
+      - Force flag is true
+    when:
+      - batchSync.sync({ force: true })
+    then:
+      - Checkpoint cleared
+      - All 3471 chunks re-processed
+      - Returns { success: true, chunksProcessed: 3471, batchesCompleted: 70 }
+
+  # Scenario 4: Partial Batch Failure
+  - name: Handle Batch Failure
+    given:
+      - Batch size is 50
+      - 3 chunks in current batch fail (API errors)
+      - 47 chunks succeed
+    when:
+      - batchSync.sync() processes the batch
+    then:
+      - 47 successful chunks stored
+      - 3 failed chunks recorded in checkpoint.failedChunkIds
+      - Batch marked as partially complete
+      - Sync continues to next batch
+      - Returns { success: true, errors: [...] }
+
+  # Scenario 5: Stale Checkpoint Detection
+  - name: Detect Stale Checkpoint
+    given:
+      - Checkpoint exists
+      - Last update was 25 hours ago (>24h threshold)
+    when:
+      - checkpointManager.isResumable() is called
+    then:
+      - Returns false
+      - Warning logged about stale checkpoint
+      - Fresh sync recommended
+
+  # Scenario 6: Concurrent Checkpoint Safety
+  - name: Concurrent Checkpoint Writes
+    given:
+      - Two processes attempt to write checkpoint simultaneously
+    when:
+      - checkpointManager.save() called concurrently
+    then:
+      - One write succeeds
+      - Other write retries or waits
+      - Checkpoint file is never corrupted
+
+performance:
+  - metric: batchProcessingTime
+    target: < 30 seconds per batch (50 chunks)
+    description: API embedding generation should complete within 30s
+    
+  - metric: checkpointSaveTime
+    target: < 100ms
+    description: Checkpoint persistence must be fast
+    
+  - metric: memoryUsage
+    target: < 512MB per batch
+    description: Memory should not grow with total chunks
+    
+  - metric: resumeOverhead
+    target: < 5% of total time
+    description: Checkpoint lookup should be negligible
+
+test_requirements:
+  unit_coverage: >= 80%
+  integration_coverage: >= 60%
+  acceptance_coverage: 100%  # All scenarios must pass
+
+files:
+  implementation:
+    - src/batch-sync.js
+    - src/checkpoint-manager.js
+    - src/chunk-deduplicator.js
+    - src/index.js  # Updated to use new classes
+  tests:
+    - tests/unit/test-batch-sync.js
+    - tests/unit/test-checkpoint-manager.js
+    - tests/unit/test-chunk-deduplicator.js
+    - tests/integration/test-resume-flow.js
+    - tests/acceptance/test-sync-scenarios.js
+  scripts:
+    - sync-batch.sh  # Updated batch script
+    - sync-monitor.sh  # Monitor with checkpoint awareness
