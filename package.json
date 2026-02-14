@@ -1,6 +1,6 @@
 {
   "name": "openclaw-docs-rag",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "OpenClaw documentation skill with vector search and RAG capabilities",
   "main": "index.js",
   "scripts": {

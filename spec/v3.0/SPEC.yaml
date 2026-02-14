@@ -1,0 +1,501 @@
+# SDD Specification: docs-rag v3.0
+# Specification-Driven Development for OpenClaw docs-rag skill
+
+spec_version: "1.0"
+module_name: "docs-rag"
+description: "OpenClaw documentation RAG skill with streaming writes, markdown header support, and crash recovery"
+version: "3.0.0"
+author: "Galatea Development Team"
+date: "2026-02-14"
+
+# Project context
+context:
+  purpose: "Enable reliable, large-scale document processing with guaranteed data integrity and crash recovery capabilities"
+  target_users: "OpenClaw agents processing documentation for RAG applications"
+
+# Architecture
+architecture:
+  type: "layered"
+  layers:
+    - name: "Streaming Layer"
+      role: "Batch processing with per-batch database persistence"
+    - name: "Parser Layer"
+      role: "Document parsing with markdown header extraction"
+    - name: "Checkpoint Layer"
+      role: "Accurate state tracking for recovery"
+    - name: "Storage Layer"
+      role: "SQLite database with transaction support"
+
+# Interface definitions - CORE OF SDD
+interfaces:
+  # ============================================
+  # Interface 1: StreamingBatchWriter
+  # ============================================
+  - name: "StreamingBatchWriter"
+    type: "class"
+    description: "Processes documents in batches with guaranteed per-batch persistence"
+    
+    methods:
+      - name: "process_batch"
+        signature: "(documents: list[Document], batch_id: str) -> BatchResult"
+        description: "Process a single batch and persist to database"
+        
+        contract:
+          preconditions:
+            - "documents is not empty"
+            - "batch_id is unique within session"
+            - "database connection is active"
+          postconditions:
+            - "all documents in batch are persisted to DB"
+            - "checkpoint updated to reflect persisted state"
+            - "returns BatchResult with success/failure status"
+        
+        test_cases:
+          - id: "SBW-001"
+            name: "Valid batch processing"
+            input:
+              documents: "[{id: 'doc1', content: 'test'}, {id: 'doc2', content: 'test2'}]"
+              batch_id: "batch_001"
+            expected:
+              success: true
+              persisted_count: 2
+              checkpoint_updated: true
+              
+          - id: "SBW-002"
+            name: "Empty batch rejection"
+            input:
+              documents: "[]"
+              batch_id: "batch_002"
+            expected:
+              success: false
+              error: "ValueError: Batch cannot be empty"
+              
+          - id: "SBW-003"
+            name: "Database failure recovery"
+            input:
+              documents: "[{id: 'doc3', content: 'test'}]"
+              batch_id: "batch_003"
+              simulate_db_failure: true
+            expected:
+              success: false
+              error: "DatabaseError"
+              checkpoint_unchanged: true
+
+      - name: "commit_batch"
+        signature: "(batch_id: str) -> bool"
+        description: "Explicitly commit batch transaction to database"
+        
+        contract:
+          preconditions:
+            - "batch_id exists in pending batches"
+          postconditions:
+            - "batch is committed to database"
+            - "returns True on success"
+        
+        test_cases:
+          - id: "SBW-004"
+            name: "Successful commit"
+            input:
+              batch_id: "batch_001"
+            expected:
+              success: true
+              
+          - id: "SBW-005"
+            name: "Commit non-existent batch"
+            input:
+              batch_id: "batch_999"
+            expected:
+              success: false
+              error: "BatchNotFoundError"
+
+  # ============================================
+  # Interface 2: MarkdownHeaderParser
+  # ============================================
+  - name: "MarkdownHeaderParser"
+    type: "class"
+    description: "Extract headers from markdown documents with hierarchy tracking"
+    
+    methods:
+      - name: "parse_headers"
+        signature: "(content: str) -> list[HeaderNode]"
+        description: "Parse markdown content and extract header structure"
+        
+        contract:
+          preconditions:
+            - "content is a string"
+          postconditions:
+            - "returns list of HeaderNode with level, text, and anchor"
+            - "headers are in document order"
+        
+        test_cases:
+          - id: "MHP-001"
+            name: "Parse H1-H6 headers"
+            input:
+              content: |
+                # Main Title
+                ## Section 1
+                ### Subsection 1.1
+                ## Section 2
+            expected:
+              success: true
+              headers:
+                - {level: 1, text: "Main Title"}
+                - {level: 2, text: "Section 1"}
+                - {level: 3, text: "Subsection 1.1"}
+                - {level: 2, text: "Section 2"}
+              
+          - id: "MHP-002"
+            name: "Parse headers with anchors"
+            input:
+              content: |
+                # Title {#custom-anchor}
+                ## Section [link text](#other-anchor)
+            expected:
+              success: true
+              headers:
+                - {level: 1, text: "Title", anchor: "custom-anchor"}
+                - {level: 2, text: "Section", has_link: true}
+                
+          - id: "MHP-003"
+            name: "No headers in content"
+            input:
+              content: "Just plain text without headers."
+            expected:
+              success: true
+              headers: []
+
+      - name: "extract_header_metadata"
+        signature: "(content: str) -> dict"
+        description: "Extract document metadata from headers (title, sections)"
+        
+        contract:
+          preconditions:
+            - "content is a string"
+          postconditions:
+            - "returns dict with title (first H1) and sections array"
+        
+        test_cases:
+          - id: "MHP-004"
+            name: "Extract document metadata"
+            input:
+              content: |
+                # Document Title
+                ## Introduction
+                Content here.
+                ## Conclusion
+            expected:
+              success: true
+              metadata:
+                title: "Document Title"
+                sections: ["Introduction", "Conclusion"]
+
+  # ============================================
+  # Interface 3: CheckpointManager
+  # ============================================
+  - name: "CheckpointManager"
+    type: "class"
+    description: "Track database-persisted state for reliable recovery"
+    
+    methods:
+      - name: "update_checkpoint"
+        signature: "(batch_id: str, persisted_count: int, metadata: dict) -> Checkpoint"
+        description: "Update checkpoint to reflect actual DB-persisted state"
+        
+        contract:
+          preconditions:
+            - "batch_id is valid"
+            - "persisted_count >= 0"
+          postconditions:
+            - "checkpoint record created/updated in database"
+            - "checkpoint reflects actual persisted state"
+        
+        test_cases:
+          - id: "CPM-001"
+            name: "Update after successful batch"
+            input:
+              batch_id: "batch_001"
+              persisted_count: 100
+              metadata: {timestamp: "2026-02-14T10:00:00Z"}
+            expected:
+              success: true
+              checkpoint:
+                last_batch_id: "batch_001"
+                total_persisted: 100
+                status: "committed"
+                
+          - id: "CPM-002"
+            name: "Checkpoint tracks actual DB state"
+            input:
+              batch_id: "batch_002"
+              persisted_count: 50
+              verify_db_state: true
+            expected:
+              success: true
+              db_count_matches: true
+
+      - name: "get_recovery_point"
+        signature: "() -> RecoveryPoint"
+        description: "Get the last confirmed recovery point for resume"
+        
+        contract:
+          preconditions:
+            - "database connection is active"
+          postconditions:
+            - "returns RecoveryPoint with last committed batch_id"
+            - "can resume from this point without data loss"
+        
+        test_cases:
+          - id: "CPM-003"
+            name: "Get valid recovery point"
+            expected:
+              success: true
+              recovery_point:
+                last_batch_id: "batch_005"
+                total_persisted: 500
+                can_resume: true
+                
+          - id: "CPM-004"
+            name: "No checkpoint exists"
+            simulate_no_checkpoint: true
+            expected:
+              success: true
+              recovery_point:
+                last_batch_id: null
+                total_persisted: 0
+                can_resume: false
+
+      - name: "verify_consistency"
+        signature: "() -> ConsistencyReport"
+        description: "Verify checkpoint matches actual database state"
+        
+        contract:
+          preconditions:
+            - "database connection is active"
+          postconditions:
+            - "returns consistency status and any discrepancies"
+        
+        test_cases:
+          - id: "CPM-005"
+            name: "Consistent state verified"
+            expected:
+              success: true
+              consistent: true
+              discrepancies: []
+              
+          - id: "CPM-006"
+            name: "Inconsistent state detected"
+            simulate_inconsistency: true
+            expected:
+              success: true
+              consistent: false
+              discrepancies: ["checkpoint: 100, db: 95"]
+
+  # ============================================
+  # Interface 4: CrashRecoveryHandler
+  # ============================================
+  - name: "CrashRecoveryHandler"
+    type: "class"
+    description: "Handle crash scenarios and ensure data integrity"
+    
+    methods:
+      - name: "recover"
+        signature: "() -> RecoveryResult"
+        description: "Attempt recovery from last checkpoint"
+        
+        contract:
+          preconditions:
+            - "called on startup if previous session crashed"
+          postconditions:
+            - "returns RecoveryResult with status and resume point"
+            - "no data loss if recovery successful"
+        
+        test_cases:
+          - id: "CRH-001"
+            name: "Successful recovery"
+            expected:
+              success: true
+              recovered_batches: 5
+              resume_from: "batch_006"
+              data_loss: 0
+              
+          - id: "CRH-002"
+            name: "Recovery with partial batch"
+            simulate_partial_batch: true
+            expected:
+              success: true
+              recovered_batches: 4
+              partial_batch_discarded: true
+              resume_from: "batch_005"
+
+      - name: "validate_integrity"
+        signature: "() -> IntegrityReport"
+        description: "Validate data integrity after recovery"
+        
+        contract:
+          preconditions:
+            - "recovery completed"
+          postconditions:
+            - "returns integrity status"
+            - "all committed batches are intact"
+        
+        test_cases:
+          - id: "CRH-003"
+            name: "Full integrity verified"
+            expected:
+              success: true
+              integrity: "full"
+              issues: []
+
+# Behavior scenarios - BDD style
+scenarios:
+  # ============================================
+  # E2E Scenario 1: Complete Streaming Workflow
+  # ============================================
+  - id: "E2E-001"
+    name: "Process large document set with streaming"
+    priority: high
+    
+    given:
+      - condition: "1000 documents ready for processing"
+      - condition: "Batch size configured to 100"
+      - condition: "Database is empty"
+      
+    when:
+      - action: "Start streaming processing"
+      - action: "Process 10 batches (1000 documents)"
+      - action: "Each batch committed before next"
+      
+    then:
+      - expectation: "All 1000 documents persisted"
+      - expectation: "Checkpoint shows 10 batches committed"
+      - expectation: "No memory issues during processing"
+      
+    quality_attributes:
+      - name: "processing_time"
+        threshold: "< 60 seconds"
+      - name: "memory_usage"
+        threshold: "< 200MB"
+
+  # ============================================
+  # E2E Scenario 2: Crash Recovery
+  # ============================================
+  - id: "E2E-002"
+    name: "Recover from crash during batch 5"
+    priority: high
+    
+    given:
+      - condition: "Processing 10 batches of documents"
+      - condition: "Batches 1-4 successfully committed"
+      - condition: "Batch 5 in progress (not committed)"
+      - condition: "System crashes unexpectedly"
+      
+    when:
+      - action: "System restarts"
+      - action: "Recovery handler invoked"
+      - action: "Resume from checkpoint"
+      
+    then:
+      - expectation: "Batches 1-4 data intact"
+      - expectation: "Batch 5 reprocessed (not duplicated)"
+      - expectation: "Batches 6-10 processed successfully"
+      - expectation: "Total documents = 1000 (no loss, no duplicates)"
+      
+    quality_attributes:
+      - name: "recovery_time"
+        threshold: "< 5 seconds"
+      - name: "data_integrity"
+        threshold: "100% (no loss, no duplicates)"
+
+  # ============================================
+  # E2E Scenario 3: Markdown Header Extraction
+  # ============================================
+  - id: "E2E-003"
+    name: "Process markdown with headers"
+    priority: medium
+    
+    given:
+      - condition: "Markdown document with H1-H6 headers"
+      - condition: "Headers have custom anchors"
+      
+    when:
+      - action: "Parse document headers"
+      - action: "Store document with header metadata"
+      
+    then:
+      - expectation: "All headers extracted with correct levels"
+      - expectation: "Anchors preserved in metadata"
+      - expectation: "Document structure queryable"
+
+# Acceptance criteria
+acceptance_criteria:
+  functional:
+    - "All unit tests pass (pytest)"
+    - "Code coverage >= 80%"
+    - "Integration tests for streaming pass"
+    - "Crash recovery tests pass"
+    - "No critical or high severity bugs"
+    - "Markdown headers correctly parsed for all test documents"
+    
+  non_functional:
+    - "Streaming processing: < 100ms per batch overhead"
+    - "Recovery time: < 5 seconds for 10k documents"
+    - "Memory usage: O(batch_size), not O(total_documents)"
+    - "Database: ACID compliance for all batch operations"
+
+# Configuration
+config:
+  environment_variables:
+    required:
+      - name: "DOCS_RAG_DB_PATH"
+        description: "Path to SQLite database file"
+    optional:
+      - name: "DOCS_RAG_BATCH_SIZE"
+        description: "Number of documents per batch"
+        default: "100"
+      - name: "DOCS_RAG_CHECKPOINT_INTERVAL"
+        description: "Checkpoint every N batches"
+        default: "1"
+      - name: "DOCS_RAG_ENABLE_WAL"
+        description: "Enable SQLite WAL mode"
+        default: "true"
+
+# Dependencies
+dependencies:
+  runtime:
+    - package: "sqlalchemy"
+      version: ">=2.0.0"
+    - package: "pydantic"
+      version: ">=2.0.0"
+  development:
+    - package: "pytest"
+      version: ">=7.0.0"
+    - package: "pytest-asyncio"
+      version: ">=0.21.0"
+    - package: "pytest-cov"
+      version: ">=4.0.0"
+
+# Testing strategy
+testing_strategy:
+  unit_tests:
+    focus: "Single functions/methods (parsers, checkpoint logic)"
+    coverage_target: 80
+    locations:
+      - "tests/unit/test_batch_writer.py"
+      - "tests/unit/test_header_parser.py"
+      - "tests/unit/test_checkpoint.py"
+      
+  integration_tests:
+    focus: "Module collaboration (streaming + checkpoint + DB)"
+    locations:
+      - "tests/integration/test_streaming_pipeline.py"
+      - "tests/integration/test_recovery_flow.py"
+      
+  acceptance_tests:
+    focus: "End-to-end crash recovery and large dataset scenarios"
+    locations:
+      - "tests/acceptance/test_crash_recovery.py"
+      - "tests/acceptance/test_large_dataset.py"
+    scenarios:
+      - "E2E-001: Complete streaming workflow"
+      - "E2E-002: Crash recovery"
+      - "E2E-003: Markdown header extraction"

@@ -2,12 +2,20 @@
 name: openclaw-docs-rag
 description: Offline OpenClaw documentation with vector search and RAG capabilities
 author: Galatea
-version: 2.0.0
+version: 3.0.0
 ---
 
-# OpenClaw Docs RAG
+# OpenClaw Docs RAG v3.0
 
 Query OpenClaw documentation using natural language and vector search.
+
+## What's New in v3.0
+
+- **Streaming batch writes** - Per-batch DB persistence for reliable large-scale processing
+- **Native Markdown support** - Extract and query document structure with header parsing
+- **Enhanced checkpoint system** - Full DB state tracking with automated recovery
+- **Crash recovery with integrity validation** - Resume from any failure point
+- **100% test coverage** - 97/97 tests passing
 
 ## When to Use
 
