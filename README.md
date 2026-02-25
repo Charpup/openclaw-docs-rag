@@ -1,4 +1,4 @@
-# OpenClaw Docs RAG v3.1.0
+# OpenClaw Docs RAG v3.1.1
 
 Offline OpenClaw documentation with vector search and RAG capabilities. Sync is driven by a segmented cron strategy — no long-running processes needed.
 

@@ -1,6 +1,7 @@
 ---
 name: openclaw-docs-rag
-description: Query OpenClaw documentation using natural language and vector search. Keywords - docs, documentation, rag, search, query, openclaw docs, vector search, semantic search, documentation query
+description: Query OpenClaw official documentation using natural language and vector search. Use before executing tasks, learning OpenClaw features, troubleshooting errors, or finding configuration options. Triggers on "openclaw docs", "documentation query", "search docs", "how to configure", "rag query".
+version: 3.1.1
 ---
 
 # OpenClaw Docs RAG
@@ -209,6 +210,7 @@ Docs Site → Fetch → Chunk → Embed → Store (per batch) → Checkpoint
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v3.1.1 | 2026-02-25 | Improved SKILL.md description and frontmatter |
 | v3.1 | 2026-02-25 | Segmented execution, maxBatches, processedIds fix, bin/ CLI, LICENSE |
 | v3.0 | 2026-02-23 | Batch-level immediate persistence, version tracking, monitoring |
 | v2.0 | 2026-02-14 | Checkpoint/resume, batch processing |
