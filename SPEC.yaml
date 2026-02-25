@@ -1,9 +1,9 @@
-# SPEC.yaml - docs-rag Skill v2.0
-# Specification for batch processing and checkpoint/resume capabilities
+# SPEC.yaml - docs-rag Skill v3.1.0
+# Specification for batch processing, checkpoint/resume, and segmented execution
 
 skill:
   name: openclaw-docs-rag
-  version: "2.0.0"
+  version: "3.1.0"
   description: OpenClaw documentation RAG with batch processing and checkpoint/resume support
 
 interfaces:
@@ -50,6 +50,11 @@ interfaces:
                 type: boolean
                 default: false
                 description: Force full re-sync, ignore checkpoint
+              maxBatches:
+                type: integer
+                nullable: true
+                default: null
+                description: Exit cleanly after N batches for segmented cron execution; null = unlimited
         returns:
           type: object
           properties:

@@ -8,6 +8,7 @@ const BASE_URL = 'https://docs.openclaw.ai';
 
 /**
  * Fetch sitemap and extract all documentation URLs
+ * Filters to English-only (excludes zh-CN, ja-JP, and other language paths)
  */
 async function fetchSitemap() {
   try {
@@ -18,13 +19,17 @@ async function fetchSitemap() {
     const $ = cheerio.load(xml, { xmlMode: true });
     
     const urls = [];
+    const langPattern = /^https:\/\/docs\.openclaw\.ai\/(zh-CN|ja-JP|ko-KR|es-ES|fr-FR|de-DE)\//;
+    
     $('url loc').each((i, elem) => {
       const url = $(elem).text();
-      if (url.startsWith(BASE_URL)) {
+      // Only include English URLs (no language prefix)
+      if (url.startsWith(BASE_URL) && !langPattern.test(url)) {
         urls.push(url);
       }
     });
     
+    console.log(`📋 Fetched ${urls.length} English URLs (filtered non-English)`);
     return urls;
   } catch (error) {
     console.error('Failed to fetch sitemap:', error);
@@ -35,12 +40,35 @@ async function fetchSitemap() {
 
 /**
  * Fetch a single documentation page
+ * Requests markdown format for clean text extraction
  */
 async function fetchPage(url) {
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'text/markdown, text/html;q=0.8, */*;q=0.5',
+        'User-Agent': 'OpenClaw-Docs-RAG/3.0.0'
+      }
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     
+    const contentType = response.headers.get('content-type') || '';
+    const isMarkdown = contentType.includes('markdown');
+    
+    if (isMarkdown) {
+      // Direct markdown response
+      const markdown = await response.text();
+      return {
+        url,
+        title: extractTitleFromMarkdown(markdown),
+        content: markdown.trim(),
+        format: 'markdown',
+        checksum: calculateChecksum(markdown),
+        fetchedAt: new Date().toISOString()
+      };
+    }
+    
+    // Fall back to HTML parsing
     const html = await response.text();
     const $ = cheerio.load(html);
     
@@ -55,6 +83,7 @@ async function fetchPage(url) {
       url,
       title: title.trim(),
       content: content.trim(),
+      format: 'html',
       checksum,
       fetchedAt: new Date().toISOString()
     };
@@ -70,6 +99,23 @@ async function fetchPage(url) {
 function calculateChecksum(content) {
   const crypto = require('crypto');
   return crypto.createHash('md5').update(content).digest('hex');
+}
+
+/**
+ * Extract title from markdown content
+ * Looks for first # heading or frontmatter title
+ */
+function extractTitleFromMarkdown(markdown) {
+  // Try frontmatter first
+  const frontmatterMatch = markdown.match(/^---\n[\s\S]*?title:\s*["']?(.+?)["']?\n[\s\S]*?---/);
+  if (frontmatterMatch) return frontmatterMatch[1].trim();
+  
+  // Try first # heading
+  const headingMatch = markdown.match(/^#\s+(.+)$/m);
+  if (headingMatch) return headingMatch[1].trim();
+  
+  // Fallback: first line
+  return markdown.split('\n')[0].trim().slice(0, 100);
 }
 
 /**

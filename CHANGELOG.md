@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-02-25
+
+### Fixed
+- Segmented execution: `syncDocs()` now accepts `maxBatches` parameter for clean exit after N batches
+- Bug fix: `processedIds` changed from `const` to `let` — accumulates correctly across batches
+- Deprecated `sync-supervisor.sh` (was sending SIGTERM to healthy sync processes every minute)
+
+### Changed
+- Default cron: every 15 min with `flock`, replaces 1-minute supervisor loop
+- `sync-docs.sh`: supports `MAX_BATCHES` env var and `--max-batches` flag
+- Webhook notifications now distinguish `partial` / `complete` / `failed` sync status
+
+### Added
+- `bin/docs-rag.js` — CLI entry point (`docs-rag query` / `docs-rag sync`)
+- `LICENSE` — MIT License
+- `package.json` `bin` field for global CLI installation
+- `crontab.txt` — segmented cron strategy
+- `src/version-detector.js`, `src/version-store.js` — OpenClaw version tracking
+- `sync-daemon.sh`, `verify-sync.sh`, `version-check.sh`, `monitor-sync-progress.sh`
+- `references/sync-architecture.md` — design decisions for segmented execution
+
+---
+
 ## [3.0.0] - 2026-02-14
 
 ### Added

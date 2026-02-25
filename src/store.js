@@ -37,7 +37,8 @@ class VectorStore {
           checksum VARCHAR(32),
           fetched_at TIMESTAMP,
           chunk_type VARCHAR(50),
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(source, checksum)
         )
       `);
       
@@ -47,6 +48,12 @@ class VectorStore {
         ON ${this.tableName} USING ivfflat (embedding vector_cosine_ops)
       `);
       
+      // Create index for source lookup
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_${this.tableName}_source 
+        ON ${this.tableName}(source)
+      `);
+      
       console.log('Vector store initialized successfully');
     } finally {
       client.release();
@@ -54,11 +61,31 @@ class VectorStore {
   }
 
   /**
-   * Store embedded chunks
+   * Store embedded chunks with explicit transaction
+   * Deduplicates by (source, checksum) within the batch to avoid conflicts
    */
   async storeChunks(chunks) {
+    // Deduplicate by (source, checksum) within the batch
+    // Keep the first occurrence of each unique combination
+    const seen = new Set();
+    const uniqueChunks = chunks.filter(chunk => {
+      const key = `${chunk.metadata.source}::${chunk.metadata.checksum}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+    
+    if (uniqueChunks.length < chunks.length) {
+      console.log(`   🔄 Deduplicated: ${chunks.length} → ${uniqueChunks.length} unique chunks`);
+    }
+
     const client = await this.pool.connect();
     try {
+      // Begin transaction for atomic batch write
+      await client.query('BEGIN');
+      
       const query = `
         INSERT INTO ${this.tableName} 
         (text, embedding, source, title, heading, checksum, fetched_at, chunk_type)
@@ -71,7 +98,7 @@ class VectorStore {
       `;
       
       const ids = [];
-      for (const chunk of chunks) {
+      for (const chunk of uniqueChunks) {
         const result = await client.query(query, [
           chunk.text,
           '[' + chunk.embedding.join(',') + ']',
@@ -85,7 +112,16 @@ class VectorStore {
         ids.push(result.rows[0].id);
       }
       
+      // Commit transaction
+      await client.query('COMMIT');
+      console.log(`   💾 Transaction committed: ${ids.length} chunks stored`);
+      
       return ids;
+    } catch (error) {
+      // Rollback on error
+      await client.query('ROLLBACK');
+      console.error(`   ❌ Transaction rolled back:`, error.message);
+      throw error;
     } finally {
       client.release();
     }

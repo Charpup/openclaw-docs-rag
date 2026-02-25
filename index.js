@@ -22,11 +22,13 @@ async function syncDocs(options = {}) {
     checkpointPath = './sync-checkpoint.json',
     resume = true,
     force = false,
-    onProgress = null  // Callback for progress updates
+    onProgress = null,  // Callback for progress updates
+    maxBatches = null   // Limit batches per run for segmented execution
   } = options;
   
   console.log('=== OpenClaw Docs RAG Sync v2.0 ===\n');
-  console.log(`Batch size: ${batchSize} | Resume: ${resume} | Force: ${force}\n`);
+  const maxBatchesLabel = maxBatches !== null ? maxBatches : 'unlimited';
+  console.log(`Batch size: ${batchSize} | Resume: ${resume} | Force: ${force} | Max batches: ${maxBatchesLabel}\n`);
   
   const checkpointManager = new CheckpointManager(checkpointPath);
   const deduplicator = new ChunkDeduplicator();
@@ -65,7 +67,7 @@ async function syncDocs(options = {}) {
   }));
   
   // Filter out already processed chunks
-  const processedIds = checkpoint ? checkpoint.processedChunkIds : [];
+  let processedIds = checkpoint ? [...checkpoint.processedChunkIds] : [];
   const remainingChunks = chunksWithHash.filter(chunk => 
     !deduplicator.isProcessed(chunk.hash, processedIds)
   );
@@ -96,9 +98,19 @@ async function syncDocs(options = {}) {
   
   console.log(`   Processing ${batches.length} batches...\n`);
   
-  const allEmbeddedChunks = [];
   const failedChunkIds = [...(checkpoint ? checkpoint.failedChunkIds : [])];
   let currentBatch = checkpoint ? checkpoint.currentBatch : 0;
+  let totalStoredChunks = checkpoint ? processedIds.length : 0;
+  
+  // Initialize vector store for batch writing
+  console.log('Step 4: Initializing vector database...');
+  const store = new VectorStore(dbConfig);
+  await store.init();
+  
+  // Only clear if fresh sync (no checkpoint)
+  if (!checkpoint) {
+    await store.clear();
+  }
   
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
@@ -109,7 +121,20 @@ async function syncDocs(options = {}) {
     try {
       // Generate embeddings for this batch
       const embeddedBatch = await embedChunks(batch, apiKey);
-      allEmbeddedChunks.push(...embeddedBatch);
+      
+      // Store embeddings immediately after generation
+      if (embeddedBatch.length > 0) {
+        console.log(`   📤 Calling storeChunks with ${embeddedBatch.length} chunks...`);
+        const ids = await store.storeChunks(embeddedBatch);
+        
+        // Verify actual database count after store
+        const afterStats = await store.getStats();
+        console.log(`   📥 storeChunks returned ${ids.length} IDs`);
+        console.log(`   📊 Database now has ${afterStats.total_chunks} total chunks`);
+        
+        totalStoredChunks = parseInt(afterStats.total_chunks);
+        console.log(`   ✓ Batch ${batchNum} stored (${ids.length} returned, ${afterStats.total_chunks} in DB)`);
+      }
       
       // Update checkpoint after each batch
       const newProcessedIds = [
@@ -124,20 +149,42 @@ async function syncDocs(options = {}) {
         currentBatch: batchNum,
         lastUpdated: new Date().toISOString()
       });
-      
-      console.log(`   ✓ Batch ${batchNum} complete (${embeddedBatch.length} embeddings)\n`);
-      
+
+      // Accumulate processed IDs so next batch's checkpoint is complete
+      processedIds = newProcessedIds;
+
       // Progress callback
       if (onProgress) {
         onProgress({
           batch: batchNum,
           totalBatches: currentBatch + batches.length,
           processed: newProcessedIds.length,
+          stored: totalStoredChunks,
           total: chunks.length,
           percentage: Math.round((newProcessedIds.length / chunks.length) * 100)
         });
       }
-      
+
+      // Check maxBatches limit — exit cleanly for next cron run
+      const processedBatchCount = i + 1;
+      if (maxBatches !== null && processedBatchCount >= maxBatches) {
+        console.log(`\n[maxBatches] Reached limit of ${maxBatches} batches. Exiting cleanly for next cron run.`);
+        console.log(`[maxBatches] Checkpoint saved at batch ${batchNum}. DB has ${totalStoredChunks} chunks.\n`);
+        await store.close();
+        return {
+          success: false,
+          status: 'partial',
+          docsProcessed: docs.length,
+          chunksCreated: chunks.length,
+          chunksStored: totalStoredChunks,
+          batchesCompleted: batchNum,
+          batchesRemaining: (currentBatch + batches.length) - batchNum,
+          failedChunks: failedChunkIds.length,
+          resumed: !!checkpoint,
+          maxBatchesReached: true
+        };
+      }
+
       // Small delay between batches to avoid rate limiting
       if (i < batches.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -148,9 +195,10 @@ async function syncDocs(options = {}) {
       failedChunkIds.push(...batch.map(c => c.hash));
       
       // Save checkpoint with failures
+      const currentProcessed = processedIds.length + ((i - failedChunkIds.length) * batchSize);
       await checkpointManager.save({
         totalChunks: chunks.length,
-        processedChunkIds: [...processedIds, ...allEmbeddedChunks.map(c => c.hash)],
+        processedChunkIds: [...processedIds.slice(0, currentProcessed)],
         failedChunkIds,
         currentBatch: batchNum,
         lastUpdated: new Date().toISOString()
@@ -158,27 +206,12 @@ async function syncDocs(options = {}) {
     }
   }
   
-  // Step 4: Store in vector database
-  console.log('Step 4: Storing in vector database...');
-  const store = new VectorStore(dbConfig);
-  await store.init();
-  
-  // Only clear if fresh sync (no checkpoint)
-  if (!checkpoint) {
-    await store.clear();
-  }
-  
-  if (allEmbeddedChunks.length > 0) {
-    const ids = await store.storeChunks(allEmbeddedChunks);
-    console.log(`✓ Stored ${ids.length} chunks\n`);
-  }
-  
-  // Get stats
+  // Get final stats
   const stats = await store.getStats();
-  console.log('=== Sync Complete ===');
+  console.log('=== Sync Progress Report ===');
   console.log(`Total sources: ${stats.total_sources}`);
-  console.log(`Total chunks: ${stats.total_chunks}`);
-  console.log(`Processed this run: ${allEmbeddedChunks.length}`);
+  console.log(`Total chunks in DB: ${stats.total_chunks}`);
+  console.log(`Checkpoint batch: ${currentBatch + batches.length}`);
   if (failedChunkIds.length > 0) {
     console.log(`Failed chunks: ${failedChunkIds.length}`);
   }
@@ -189,14 +222,16 @@ async function syncDocs(options = {}) {
   if (stats.total_chunks >= chunks.length) {
     console.log('\n🎉 Full sync complete! Clearing checkpoint...');
     await checkpointManager.clear();
+  } else {
+    console.log(`\n⏸️ Sync paused at batch ${currentBatch + batches.length}. Resume with: npm run sync`);
   }
   
   return {
-    success: true,
+    success: stats.total_chunks >= chunks.length,
     docsProcessed: docs.length,
     chunksCreated: chunks.length,
-    chunksProcessed: allEmbeddedChunks.length,
-    batchesCompleted: batches.length,
+    chunksStored: stats.total_chunks,
+    batchesCompleted: currentBatch + batches.length,
     failedChunks: failedChunkIds.length,
     resumed: !!checkpoint,
     stats

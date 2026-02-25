@@ -19,10 +19,19 @@ fi
 
 # Parse arguments
 FORCE=false
+MAX_BATCHES="${MAX_BATCHES:-10}"   # Default: 10 batches per run
 while [[ $# -gt 0 ]]; do
     case $1 in
         --force)
             FORCE=true
+            shift
+            ;;
+        --max-batches)
+            MAX_BATCHES="$2"
+            shift 2
+            ;;
+        --max-batches=*)
+            MAX_BATCHES="${1#*=}"
             shift
             ;;
         *)
@@ -32,16 +41,46 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Send webhook notification
+send_webhook() {
+    local message="$1"
+    if [ -n "$DISCORD_WEBHOOK" ]; then
+        curl -s -H "Content-Type: application/json" \
+            -d "{\"content\":\"$message\"}" \
+            "$DISCORD_WEBHOOK" > /dev/null || true
+    fi
+}
+
 # Run sync
+send_webhook "🚀 Docs-RAG 同步启动 | Batch size: 25 | Max batches: ${MAX_BATCHES}"
+
 node -e "
 const { syncDocs } = require('./index.js');
-syncDocs({ force: $FORCE })
+const maxBatches = parseInt('${MAX_BATCHES}') || null;
+syncDocs({ force: $FORCE, batchSize: 25, maxBatches: maxBatches })
   .then(result => {
-    console.log('Sync complete:', result);
-    process.exit(0);
+    if (result.status === 'partial') {
+      console.log('[partial] Batches completed: ' + result.batchesCompleted + ', remaining: ' + result.batchesRemaining);
+      console.log('[partial] DB chunks: ' + result.chunksStored);
+      process.exit(0);
+    } else if (result.success) {
+      console.log('[complete] Full sync done! DB chunks: ' + result.chunksStored);
+      process.exit(0);
+    } else {
+      console.log('[failed] ' + JSON.stringify(result));
+      process.exit(1);
+    }
   })
-  .catch(err => {
-    console.error('Sync failed:', err);
-    process.exit(1);
-  });
+  .catch(err => { console.error('[error]', err); process.exit(1); });
 "
+
+EXIT_CODE=$?
+
+# Send completion notification
+if [ $EXIT_CODE -eq 0 ]; then
+    send_webhook "✅ Docs-RAG 批次完成 (max=${MAX_BATCHES}) | cron 将继续"
+else
+    send_webhook "❌ Docs-RAG 失败 (code: $EXIT_CODE) | 请检查日志"
+fi
+
+exit $EXIT_CODE
