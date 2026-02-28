@@ -3,6 +3,9 @@
 
 set -e
 
+# Ensure node is in PATH
+export PATH="/root/.nvm/versions/node/v22.22.0/bin:$PATH"
+
 # Load environment variables from .env file
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/.env" ]; then

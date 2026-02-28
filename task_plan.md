@@ -1,141 +1,104 @@
-# Task Plan - docs-rag Skill v2.0 迭代
+# Docs-RAG LLMs.txt Refactor - Task Plan
 
-**目标**: 重构 docs-rag 同步机制，支持 Batch 模式 + 断点续传  
-**方法**: Planning with Files + TDD-SDD 双金字塔流程  
-**预估时间**: 3-4 小时  
-**开始时间**: 2026-02-14 11:30 CST  
-**关联任务**: docs-rag-sync (P0) - 因反复重启问题触发本次迭代
+## Project Overview
+废弃本地 RAG，重构为基于 llms.txt 的实时检索方案
 
----
+## Phase 1: 立即停止并备份 (立即执行)
+- [ ] 1.1 停止所有 docs-rag 同步进程
+  - Kill sync-daemon.sh
+  - Kill any running sync-docs.sh processes
+  - Remove cron jobs
+- [ ] 1.2 停止系统 crontab
+  - Backup current crontab
+  - Remove docs-rag related entries
+- [ ] 1.3 备份 checkpoint 和数据库
+  - Backup sync-checkpoint.json
+  - Backup PostgreSQL database
+  - Store backups with timestamp
+- [ ] 1.4 标记旧代码为 deprecated
+  - Move old src/ to src-deprecated/
+  - Create deprecation notice
 
-## Goal
-将 docs-rag 同步从"全量重跑"模式改造为"批处理+断点续传"模式，解决进程在 97-99% 处反复崩溃导致无限循环的问题。
+**Dependencies**: None  
+**Estimated Complexity**: 2
 
----
+## Phase 2: 开发实时检索方案
+- [ ] 2.1 创建新的 fetcher-llms.js
+  - Fetch llms.txt from docs.openclaw.ai
+  - Parse llms.txt format
+  - Extract document URLs
+  - Cache document list (5min TTL)
+- [ ] 2.2 创建新的 query-engine.js
+  - Keywords matching algorithm
+  - Document relevance scoring
+  - Select top-K relevant docs
+  - Simple in-memory cache
+- [ ] 2.3 更新 index.js
+  - Replace sync logic with real-time fetch
+  - Integrate new fetcher and query engine
+  - Maintain same API interface
+  - Add cache management
+- [ ] 2.4 添加简单缓存机制 (5分钟 TTL)
+  - In-memory cache for llms.txt
+  - In-memory cache for fetched docs
+  - TTL cleanup
 
-## Current Phase
-Phase 4: 测试与验证
+**Dependencies**: Phase 1  
+**Estimated Complexity**: 5
 
----
+## Phase 3: 测试与验证
+- [ ] 3.1 测试实时检索功能
+  - Test fetcher-llms.js
+  - Test query-engine.js
+  - Test end-to-end query
+- [ ] 3.2 验证查询质量
+  - Compare results with old RAG
+  - Check relevance scores
+  - Verify document coverage
+- [ ] 3.3 性能测试
+  - Measure query latency
+  - Test concurrent queries
+  - Verify cache effectiveness
 
-## Phases
+**Dependencies**: Phase 2  
+**Estimated Complexity**: 3
 
-### Phase 1: SDD Spec 定义 (SPEC.yaml)
-**Status**: complete
+## Phase 4: 部署与清理
+- [ ] 4.1 更新 SKILL.md 文档
+  - Document new architecture
+  - Update usage examples
+  - Add troubleshooting section
+- [ ] 4.2 推送 GitHub
+  - Commit all changes
+  - Push to main branch
+- [ ] 4.3 创建 Release
+  - Tag v4.0.0
+  - Write release notes
+- [ ] 4.4 设置 5分钟 cron 监控
+  - Create simple health check script
+  - Add to crontab
+- [ ] 4.5 清理旧代码和数据库
+  - Remove src-deprecated/
+  - Clean up old database tables
+  - Remove checkpoint files
 
-- [x] 分析现有问题（3次在 97-99% 处重启，无 resume 机制）
-- [x] 定义 batch 处理接口（支持分批同步）
-- [x] 定义 checkpoint/resume 接口（支持断点续传）
-- [x] 定义状态持久化格式（JSON/DB 状态表）
-- [x] 编写 SPEC.yaml
-- **复杂度**: 中
-- **实际用时**: 20 min
-- **产出**: SPEC.yaml (94 lines, 3 interfaces, 6 scenarios)
+**Dependencies**: Phase 3  
+**Estimated Complexity**: 3
 
-### Phase 2: TDD 测试生成
-**Status**: complete
+## DAG Dependencies
+```
+Phase 1 → Phase 2 → Phase 3 → Phase 4
+```
 
-- [x] 生成 unit tests（batch 逻辑测试）
-- [x] 生成 integration tests（checkpoint 恢复测试）
-- [x] 生成 acceptance tests（完整同步流程测试）
-- [x] RED phase: 运行测试确认失败
-- **复杂度**: 中
-- **实际用时**: 25 min
-- **产出**: 
-  - tests/unit/test-checkpoint-manager.js (11 tests)
-  - tests/unit/test-chunk-deduplicator.js (8 tests)
-  - tests/unit/test-batch-sync.js (8 tests)
-  - tests/integration/test-resume-flow.js (5 tests)
-  - tests/acceptance/test-sync-scenarios.js (6 tests)
+## Output Requirements
+- [ ] All code changes
+- [ ] Updated README.md
+- [ ] GitHub Release v4.0.0
+- [ ] Development log (development-log.md)
 
-### Phase 3: 核心实现 (Red-Green-Refactor)
-**Status**: complete
-
-#### 3.1 CheckpointManager 实现
-- [x] 创建 src/checkpoint-manager.js
-- [x] GREEN phase: 测试通过 (93% coverage)
-
-#### 3.2 ChunkDeduplicator 实现
-- [x] 创建 src/chunk-deduplicator.js
-- [x] GREEN phase: 测试通过 (90% coverage)
-
-#### 3.3 BatchSync 基础实现
-- [x] 创建 src/batch-sync.js
-- [x] GREEN phase: 单元测试通过 (31 tests)
-- **待完善**: sync() 和 processBatch() 完整实现
-
-- **复杂度**: 高
-- **实际用时**: 45 min
-- **产出**: 3 个核心类，31 个测试全部通过
-
-### Phase 4: 测试与验证
-**Status**: pending
-
-- [ ] 单元测试覆盖率 >= 80%
-- [ ] 集成测试：模拟中断后恢复
-- [ ] 端到端测试：完整同步流程
-- [ ] 手动验证：小批量文档测试
-- **复杂度**: 中
-- **预计**: 45 min
-
-### Phase 5: 部署与交付
-**Status**: pending
-
-- [ ] 更新 SKILL.md 文档
-- [ ] 更新 README.md 使用说明
-- [ ] 更新 sync-batch.sh 脚本
-- [ ] Git commit & push
-- [ ] 部署测试
-- **复杂度**: 低
-- **预计**: 30 min
-
----
-
-## 进度追踪
-
-| 时间 | 阶段 | 状态 | 备注 |
-|------|------|------|------|
-| 11:30 | Phase 1 | 🔄 | 问题分析完成，开始 SPEC 定义 |
-| - | Phase 2 | ⏳ | 等待 |
-| - | Phase 3 | ⏳ | 等待 |
-| - | Phase 4 | ⏳ | 等待 |
-| - | Phase 5 | ⏳ | 等待 |
-
----
-
-## Key Questions
-
-1. **Checkpoint 存储位置？** → 暂定 JSON 文件（轻量）或 PostgreSQL 状态表（持久）
-2. **Batch size 多大合适？** → 50-100 chunks（平衡速度和稳定性）
-3. **如何处理部分失败的 batch？** → 记录失败 chunks，支持单独重试
-4. **是否保持向后兼容？** → 是，force: true 时仍支持全量刷新
-
----
-
-## Decisions Made
-
-| Decision | Rationale |
-|----------|-----------|
-| Batch size = 50 | 平衡 API 调用频率和内存占用 |
-| Checkpoint 存储 = JSON file | 简单，无需 DB 迁移，易于调试 |
-| 幂等性设计 = chunk hash 去重 | 避免重复嵌入相同内容 |
-
----
-
-## Errors Encountered
-
-| Error | Attempt | Resolution |
-|-------|---------|------------|
-| 进程在 97-99% 处反复停止 | N/A | 根本原因未知，通过 batch + checkpoint 绕过 |
-
----
-
-## Notes
-
-- **关键约束**: 进程在 embeddings 生成最后阶段反复停止，可能是内存/超时/API 限制
-- **解决策略**: 不再依赖长生命周期的单进程，改用短生命周期的 batch 处理
-- **监控需求**: batch 处理期间仍需监控，但恢复点更细粒度
-
----
-
-*最后更新: 2026-02-14 11:30 CST*
+## Risk Assessment
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| llms.txt unavailable | High | Fallback to cached version |
+| Query quality degradation | Medium | A/B testing with old system |
+| Performance issues | Low | Cache + rate limiting |

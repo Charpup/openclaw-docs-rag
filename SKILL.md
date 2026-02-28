@@ -183,13 +183,29 @@ curl -H "Authorization: Bearer $OPENAI_API_KEY" \
 
 | File | Purpose |
 |------|---------|
-| `src/fetcher.js` | Fetch docs with markdown support |
+| `src/fetcher.js` | Fetch docs with markdown support (English-only, Accept: text/markdown) |
 | `src/chunker.js` | Split docs into chunks |
 | `src/embedder.js` | Generate embeddings via API |
 | `src/store.js` | PostgreSQL vector storage |
 | `src/checkpoint-manager.js` | Resume capability |
 | `src/version-detector.js` | OpenClaw version tracking |
 | `src/version-store.js` | Version history storage |
+
+### Fetching Strategy
+
+**Language Filter**: Only English documentation is fetched
+- Filters out: `zh-CN`, `ja-JP`, `ko-KR`, `es-ES`, `fr-FR`, `de-DE`
+- Result: ~285 English pages from docs.openclaw.ai
+
+**Request Headers**: Explicitly requests markdown format
+```javascript
+Accept: text/markdown, text/html;q=0.8, */*;q=0.5
+User-Agent: OpenClaw-Docs-RAG/3.0.0
+```
+
+**Chunking**: Documents are split into semantic chunks (~1000 tokens each)
+- Average: ~15 chunks per document
+- Total: ~4,000-4,500 chunks for full documentation
 
 ### Data Flow
 

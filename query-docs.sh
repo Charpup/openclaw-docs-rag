@@ -1,46 +1,18 @@
 #!/bin/bash
-# query-docs.sh - Query OpenClaw documentation
+# query-docs.sh - Query OpenClaw documentation (v4.0)
 
 set -e
 
-# Load environment variables from .env file
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$SCRIPT_DIR/.env" ]; then
-  export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
-fi
+cd "$(dirname "$0")"
 
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <query> [--top-k N]"
+    echo "Usage: ./query-docs.sh \"your question here\""
+    echo ""
+    echo "Examples:"
+    echo "  ./query-docs.sh \"how to configure cron jobs\""
+    echo "  ./query-docs.sh \"discord bot setup\""
+    echo "  ./query-docs.sh \"cli commands\""
     exit 1
 fi
 
-QUERY="$1"
-TOP_K=5
-
-# Parse arguments
-shift
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --top-k)
-            TOP_K="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown option: $1"
-            exit 1
-            ;;
-    esac
-done
-
-# Run query
-node -e "
-const { queryDocs } = require('./index.js');
-queryDocs('$QUERY', { topK: $TOP_K })
-  .then(result => {
-    console.log(JSON.stringify(result, null, 2));
-  })
-  .catch(err => {
-    console.error('Query failed:', err);
-    process.exit(1);
-  });
-"
+node index.js query "$@"

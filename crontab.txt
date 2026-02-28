@@ -1,21 +1,4 @@
-# Docs-RAG Cron Jobs — Segmented Execution Strategy (2026-02-25)
-# Each run: MAX_BATCHES=10 batches × 25 chunks = 250 chunks, ~5-8 min, exits cleanly.
-# Checkpoint resumes next run. flock prevents concurrent runs.
+# Docs-RAG Health Check
+# Runs every 5 minutes
 
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-# === SYNC: every 15 minutes, 10 batches per run ===
-*/15 * * * * cd /root/.openclaw/workspace/skills/openclaw-docs-rag && flock -n /tmp/docs-rag-sync.lock MAX_BATCHES=10 ./sync-docs.sh >> logs/sync-cron.log 2>&1
-
-# === MONITOR: every 30 minutes ===
-*/30 * * * * cd /root/.openclaw/workspace/skills/openclaw-docs-rag && ./sync-monitor.sh once >> logs/monitor-cron.log 2>&1
-
-# === VERSION CHECK: daily 8:30am ===
-30 8 * * * cd /root/.openclaw/workspace/skills/openclaw-docs-rag && ./version-check.sh >> logs/version-cron.log 2>&1
-
-# === WEEKLY FORCE RESYNC: Sunday 1am (no batch limit, runs to completion) ===
-0 1 * * 0 cd /root/.openclaw/workspace/skills/openclaw-docs-rag && flock -n /tmp/docs-rag-sync.lock MAX_BATCHES=999 ./sync-docs.sh --force >> logs/sync-cron.log 2>&1
-
-# === WEEKLY REPORT: Monday 9am ===
-0 9 * * 1 cd /root/.openclaw/workspace/skills/openclaw-docs-rag && ./sync-monitor.sh report >> logs/monitor-cron.log 2>&1
+*/5 * * * * cd /root/.openclaw/skills/docs-rag && ./health-check.sh >/dev/null 2>&1
