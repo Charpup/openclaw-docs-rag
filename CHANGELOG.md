@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.0.0] - 2026-03-10
+
+### 🚀 Rebrand + Community Launch Prep
+
+**Renamed:**
+- Skill name: `openclaw-docs-rag` → `claw-doc`
+- Project package: `openclaw-claw-doc`
+- Added new CLI alias: `claw-doc` (`docs-rag` kept as deprecated shim)
+
+**Added:**
+- Chinese trigger/scenario keywords for common OpenClaw support intents
+- Chinese semantic expansion in query engine (配置/网关/命令行/自动化/排障 etc.)
+- Trigger keyword reference: `references/trigger-keywords-zh.md`
+
+**Changed:**
+- SKILL.md + README rewritten for post-RAG positioning
+- User-facing naming updated to Claw-Doc v5.0
+
 ## [4.0.0] - 2026-02-28
 
 ### 🎉 Major Release - Complete Architecture Rewrite

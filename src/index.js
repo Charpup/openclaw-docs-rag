@@ -1,5 +1,5 @@
 /**
- * index.js - Main entry point for Docs-RAG v4.0
+ * index.js - Main entry point for Claw-Doc v5.0
  * 
  * New real-time retrieval system based on llms.txt
  * Replaces the old sync-based vector search approach
@@ -25,7 +25,7 @@ class DocsRAG {
    */
   async init() {
     this.documents = await this.fetcher.fetchDocumentList();
-    console.log(`[docs-rag] Loaded ${this.documents.length} documents`);
+    console.log(`[claw-doc] Loaded ${this.documents.length} documents`);
   }
 
   /**
@@ -65,7 +65,7 @@ class DocsRAG {
             content = await this.fetcher.fetchDocumentContent(result.url);
             this.contentCache.set(cacheKey, content);
           } catch (error) {
-            console.error(`[docs-rag] Failed to fetch ${result.url}:`, error.message);
+            console.error(`[claw-doc] Failed to fetch ${result.url}:`, error.message);
             content = 'Failed to load content';
           }
         }
@@ -162,7 +162,7 @@ async function main() {
 
   } else {
     console.log(`
-Docs-RAG v4.0 - Real-time Documentation Retrieval
+Claw-Doc v5.0 - Real-time Documentation Retrieval
 
 Usage:
   node index.js query "your question"    Query documentation

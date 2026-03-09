@@ -1,74 +1,41 @@
 ---
-name: openclaw-docs-rag
-description: Query OpenClaw official documentation in real time via llms.txt index + markdown page fetch. Use before executing tasks, troubleshooting, or learning OpenClaw features.
-version: 4.0.1
+name: claw-doc
+description: OpenClaw 文档实时检索技能（llms.txt + markdown 拉取）。适用于 OpenClaw 配置、网关、CLI、自动化、频道接入、故障排查等场景；支持中英文关键词触发。
+version: 5.0.0
 ---
 
-# OpenClaw Docs RAG (v4.x)
+# Claw-Doc (v5.x)
 
-Real-time docs retrieval based on `https://docs.openclaw.ai/llms.txt`.
+面向 OpenClaw 官方文档的实时检索技能（无本地向量库、无同步任务依赖）。
 
-## When to Use
+## 适用场景（中文触发）
 
-- Before executing OpenClaw operations
-- Troubleshooting OpenClaw config/runtime issues
-- Looking up CLI/tools/concepts usage
+- 配置 / 设定 / settings
+- OpenClaw / 网关 / gateway
+- 命令行 / CLI / 命令
+- 自动化 / 定时任务 / cron / webhook
+- 频道接入（Discord / Telegram / Slack / Signal / Feishu）
+- 故障排查 / 报错 / troubleshooting
+- 插件 / 技能 / tools
 
 ## Core Flow
 
-1. Fetch and parse `llms.txt` (document index)
-2. Keyword-match relevant pages
-3. Fetch target pages with markdown-first request
-4. Return formatted context + source links
+1. 拉取并解析 `https://docs.openclaw.ai/llms.txt`
+2. 关键词匹配相关页面（含中文语义扩展）
+3. 获取目标页面内容（markdown 优先）
+4. 返回上下文与来源链接
 
-No PostgreSQL, no embeddings, no sync job required.
-
-## Fetching Rules
-
-### Index Source
-- `https://docs.openclaw.ai/llms.txt`
-
-### Content Fetch Header
-```http
-Accept: text/markdown, text/html;q=0.8, */*;q=0.5
-```
-
-### Cache
-- In-memory + file cache
-- Default TTL: 5 minutes
-
-## Usage
+## Quick Usage
 
 ```bash
-# Query docs
-./query-docs.sh "how to configure cron jobs"
-
-# Equivalent
-node index.js query "how to configure cron jobs"
-
-# Status / cache
+./query-docs.sh "如何配置 cron 定时任务"
+node index.js query "openclaw gateway configuration"
 node index.js status
 node index.js clear-cache
 ```
-
-## Programmatic API
-
-```javascript
-const { DocsRAG } = require('./src/index');
-
-const rag = new DocsRAG();
-const result = await rag.query('discord setup', { topK: 5 });
-console.log(result.context);
-console.log(result.sources);
-```
-
-## Notes
-
-- Legacy sync/vector code is deprecated and moved under `src-deprecated/`.
-- If docs site is temporarily unavailable, it falls back to file cache when possible.
 
 ## References
 
 - [README](./README.md)
 - [CHANGELOG](./CHANGELOG.md)
-- [Development Log](./development-log.md)
+- [Trigger Keywords (ZH)](./references/trigger-keywords-zh.md)

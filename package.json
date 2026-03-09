@@ -1,28 +1,29 @@
 {
-  "name": "openclaw-docs-rag",
-  "version": "3.1.0",
-  "description": "OpenClaw documentation skill with vector search and RAG capabilities",
+  "name": "openclaw-claw-doc",
+  "version": "5.0.0",
+  "description": "OpenClaw documentation retrieval skill with llms.txt real-time fetch and Chinese keyword support",
   "main": "index.js",
   "bin": {
+    "claw-doc": "./bin/claw-doc.js",
     "docs-rag": "./bin/docs-rag.js"
   },
   "scripts": {
-    "test": "jest",
-    "sync": "./sync-docs.sh",
     "query": "./query-docs.sh",
-    "init-db": "node scripts/init-db.js"
+    "status": "node index.js status",
+    "clear-cache": "node index.js clear-cache"
   },
-  "keywords": ["openclaw", "documentation", "rag", "vector-search", "embedding"],
+  "keywords": [
+    "openclaw",
+    "documentation",
+    "docs",
+    "claw-doc",
+    "llms-txt",
+    "retrieval",
+    "chinese"
+  ],
   "author": "Galatea",
   "license": "MIT",
   "dependencies": {
-    "@notionhq/client": "^2.2.0",
-    "cheerio": "^1.0.0-rc.12",
-    "node-fetch": "^3.3.0",
-    "pg": "^8.11.0",
-    "dotenv": "^16.3.0"
-  },
-  "devDependencies": {
-    "jest": "^29.0.0"
+    "node-fetch": "^3.3.0"
   }
 }

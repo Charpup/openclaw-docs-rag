@@ -1,8 +1,7 @@
 /**
- * OpenClaw Docs RAG v4.0 - Real-time llms.txt-based retrieval
- * 
- * Replaces the old sync-based vector search with lightweight keyword matching
- * on llms.txt document list. No database required, no embeddings, no sync.
+ * OpenClaw Claw-Doc v5.0 - Real-time llms.txt-based retrieval
+ *
+ * Renamed from Docs-RAG. Lightweight keyword matching on llms.txt index.
  */
 
 const { DocsRAG } = require('./src/index');
@@ -47,7 +46,7 @@ async function main() {
     const rag = new DocsRAG();
     await rag.init();
     const status = rag.getStatus();
-    console.log('Docs-RAG v4.0 Status:');
+    console.log('Claw-Doc v5.0 Status:');
     console.log(JSON.stringify(status, null, 2));
 
   } else if (command === 'clear-cache') {
@@ -63,7 +62,7 @@ async function main() {
   } else {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║           OpenClaw Docs RAG v4.0                             ║
+║            OpenClaw Claw-Doc v5.0                            ║
 ║     Real-time Documentation Retrieval (llms.txt-based)       ║
 ╚══════════════════════════════════════════════════════════════╝
 
