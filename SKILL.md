@@ -1,7 +1,6 @@
 ---
 name: claw-doc
 description: OpenClaw 文档实时检索技能（llms.txt + markdown 拉取）。适用于 OpenClaw 配置、网关、CLI、自动化、频道接入、故障排查等场景；支持中英文关键词触发。
-version: 5.0.0
 ---
 
 # Claw-Doc (v5.x)
